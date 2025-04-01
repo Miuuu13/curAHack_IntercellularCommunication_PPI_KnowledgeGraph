@@ -451,33 +451,29 @@ plt.show()
 
 
 #%%
+
+""" until here just visualization of CellChat outout to understand the data"""
+
+
+#%%
 ################ KNOWLEDGE GRAPH #############################
 
 
-
+#try to visualize the knowledge graph first
 
 #%%
 
 """ The already existing knowledge graph """
 
-prime_kg_graph = pd.read_csv("./data/prime_kg.csv")
+#prime_kg_graph = pd.read_csv("./data/prime_kg.csv")
 
 #%%
-prime_kg_graph
+#prime_kg_graph
 
+#%%
 
+""" type cast while loading prime_kg KG"""
 
-
-
-
-
-
-
-
-
-#################################################################
-
-# %%
 #<ipython-input-8-6617004efd71>:5: DtypeWarning: Columns (3,8) have mixed types. Specify dtype option on import or set low_memory=False.
 #  prime_kg_graph = pd.read_csv("./data/prime_kg.csv")
 
@@ -486,7 +482,7 @@ prime_kg_graph
 file_path = './data/prime_kg.csv'
 
 # Load the CSV file and specify column data types
-prime_kg_df = pd.read_csv(
+prime_kg_casted_df = pd.read_csv(
     file_path,
     dtype={
         'relation': str, 
@@ -517,19 +513,69 @@ prime_kg_df = pd.read_csv(
 #y_name,
 #y_source -NCBI
 
-#%%
-prime_kg_df
-
 
 #%%
 
+prime_kg_casted_df
 
 
+#%%
+
+""" Translate the knowledge graph from human to mice! The graph they gave us is for HUMAN!!! """
+#Extract gene-gene relationships from prime_kg_casted_df.
+# Map human genes to mouse genes via orthologs.
+#Output a new DataFrame: gene1_x, relation, gene2_y (but in mouse)
 
 
+#1. Filter only gene-gene edges (e.g., protein_protein).
+#2. Get a human → mouse ortholog mapping (e.g., from a file or Ensembl BioMart).
+#3. Map x_name and y_name to mouse gene names.
+#4. Drop rows where any mapping is missing.
+#5. Return gene1_x, relation, gene2_y.
 
+#%%
+#Go to: https://www.ensembl.org/biomart/martview/4cb3b9f37f42bacd7ca321996349b09d
 
+# use Database: Ensembl Genes (latest), Dataset: Homo sapiens genes (GRCh38)
+#Click on "Attributes" → Homologs → Mouse Orthologs
 
+#Select:
+
+#Gene stable ID (human)
+
+#Gene name (human)
+
+#Mouse ortholog stable ID
+
+#Mouse ortholog gene name
+
+# Sample ortholog map: Human gene name → Mouse gene name
+# You can get this from Ensembl BioMart or other services
+#1
+
+#ortholog_df = pd.read_csv('./data/human_mouse_orthologs.csv')  # columns: human_gene, mouse_gene
+ortholog_df = pd.read_csv('./data/human_mouse_orthologs.txt')
+#%%
+ortholog_map = dict(zip(ortholog_df['human_gene'], ortholog_df['mouse_gene']))
+
+#%%2
+gene_kg_df = prime_kg_casted_df[
+    (prime_kg_casted_df['x_type'] == 'gene/protein') &
+    (prime_kg_casted_df['y_type'] == 'gene/protein')
+]
+
+#%%3
+gene_kg_df['mouse_x'] = gene_kg_df['x_name'].map(ortholog_map)
+gene_kg_df['mouse_y'] = gene_kg_df['y_name'].map(ortholog_map)
+
+#%%4
+mice_kg_df = gene_kg_df.dropna(subset=['mouse_x', 'mouse_y'])
+
+#%%5
+final_mice_kg_df = mice_kg_df[['mouse_x', 'display_relation', 'mouse_y']]
+final_mice_kg_df.columns = ['gene1_x', 'relation', 'gene2_y']
+print("Translation completed-.....")
+#%%
 
 
 
