@@ -455,126 +455,7 @@ plt.show()
 """ until here just visualization of CellChat outout to understand the data"""
 
 
-#%%
-################ KNOWLEDGE GRAPH #############################
 
-
-#try to visualize the knowledge graph first
-
-#%%
-
-""" The already existing knowledge graph """
-
-#prime_kg_graph = pd.read_csv("./data/prime_kg.csv")
-
-#%%
-#prime_kg_graph
-
-#%%
-
-""" type cast while loading prime_kg KG"""
-
-#<ipython-input-8-6617004efd71>:5: DtypeWarning: Columns (3,8) have mixed types. Specify dtype option on import or set low_memory=False.
-#  prime_kg_graph = pd.read_csv("./data/prime_kg.csv")
-
-
-# Define the path to your CSV file
-file_path = './data/prime_kg.csv'
-
-# Load the CSV file and specify column data types
-prime_kg_casted_df = pd.read_csv(
-    file_path,
-    dtype={
-        'relation': str, 
-        'display_relation': str,
-        'x_index': float,
-        'x_id': str, #int,?
-        'x_type': str,
-        'x_name': str,
-        'x_source': str,
-        'y_index': int,
-        'y_id': str, #int,?
-        'y_type': str,
-        'y_name': str,
-        'y_source': str,
-    }
-)
-
-#relation, - protein_protein, 
-#display_relation, - ppi,
-#x_index, - 0,9796
-#x_id, -gene/protein,
-#x_type, -PHYHIP,
-#x_name, - NCBI
-#x_source, 8889
-#y_index, 56992
-#y_id, -gene/protein
-#y_type, -KIF15
-#y_name,
-#y_source -NCBI
-
-
-#%%
-
-prime_kg_casted_df
-
-
-#%%
-
-""" Translate the knowledge graph from human to mice! The graph they gave us is for HUMAN!!! """
-#Extract gene-gene relationships from prime_kg_casted_df.
-# Map human genes to mouse genes via orthologs.
-#Output a new DataFrame: gene1_x, relation, gene2_y (but in mouse)
-
-
-#1. Filter only gene-gene edges (e.g., protein_protein).
-#2. Get a human → mouse ortholog mapping (e.g., from a file or Ensembl BioMart).
-#3. Map x_name and y_name to mouse gene names.
-#4. Drop rows where any mapping is missing.
-#5. Return gene1_x, relation, gene2_y.
-
-#%%
-#Go to: https://www.ensembl.org/biomart/martview/4cb3b9f37f42bacd7ca321996349b09d
-
-# use Database: Ensembl Genes (latest), Dataset: Homo sapiens genes (GRCh38)
-#Click on "Attributes" → Homologs → Mouse Orthologs
-
-#Select:
-
-#Gene stable ID (human)
-
-#Gene name (human)
-
-#Mouse ortholog stable ID
-
-#Mouse ortholog gene name
-
-# Sample ortholog map: Human gene name → Mouse gene name
-# You can get this from Ensembl BioMart or other services
-#1
-
-#ortholog_df = pd.read_csv('./data/human_mouse_orthologs.csv')  # columns: human_gene, mouse_gene
-ortholog_df = pd.read_csv('./data/human_mouse_orthologs.txt')
-#%%
-ortholog_map = dict(zip(ortholog_df['human_gene'], ortholog_df['mouse_gene']))
-
-#%%2
-gene_kg_df = prime_kg_casted_df[
-    (prime_kg_casted_df['x_type'] == 'gene/protein') &
-    (prime_kg_casted_df['y_type'] == 'gene/protein')
-]
-
-#%%3
-gene_kg_df['mouse_x'] = gene_kg_df['x_name'].map(ortholog_map)
-gene_kg_df['mouse_y'] = gene_kg_df['y_name'].map(ortholog_map)
-
-#%%4
-mice_kg_df = gene_kg_df.dropna(subset=['mouse_x', 'mouse_y'])
-
-#%%5
-final_mice_kg_df = mice_kg_df[['mouse_x', 'display_relation', 'mouse_y']]
-final_mice_kg_df.columns = ['gene1_x', 'relation', 'gene2_y']
-print("Translation completed-.....")
 #%%
 
 
@@ -588,7 +469,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 # Load your data (assuming already loaded as prime_kg_df)
-df_subset = prime_kg_df.head(50)  # First 50 rows
+df_subset = prime_kg_casted_df.head(50)  # First 50 rows
 
 # Create the graph
 G = nx.Graph()
@@ -622,5 +503,216 @@ plt.show()
 
 # %%
 
+""" Load the mice knowledge graph """
+
+# Load the saved mouse knowledge graph
+mouse_kg_df = pd.read_csv('./data/mouse_translated_prime_kg.csv')
+
+# %%
+mouse_kg_df
+# %%
+
+""" reminder: i now can use the highly up or down regulated "interesting"
+interaction to look relevant stuff up from the new mice kg"""
+
+
+# --- Highly up/down regulated interactions ---
+highly_upregulated_df
+#%%
+
+highly_downregulated_df
+
+
+# %%
+
+# For each ligand-receptor pair in highly_upregulated_df and highly_downregulated_df, you want to: Check if there's a direct or indirect connection in mouse_kg_df.
+# Optionally, retrieve a path (e.g., ligand → intermediary → receptor).
+# Optionally, annotate with pathway or disease info using public resources.
+
+
+def find_direct_interactions(df, kg):
+    return df[df.apply(lambda row: ((kg['gene1_x'] == row['ligand']) & (kg['gene2_y'] == row['receptor'])).any() |
+                                   ((kg['gene1_x'] == row['receptor']) & (kg['gene2_y'] == row['ligand'])).any(), axis=1)]
+    
+direct_hits_up = find_direct_interactions(highly_upregulated_df, mouse_kg_df)
+direct_hits_down = find_direct_interactions(highly_downregulated_df, mouse_kg_df)
+
+# %%
+direct_hits_up
+# %%
+direct_hits_down
+# %%
+import networkx as nx
+
+# Build the graph
+G = nx.from_pandas_edgelist(mouse_kg_df, source='gene1_x', target='gene2_y', edge_attr='relation')
+
+def find_paths(df, G, max_len=2):
+    paths = []
+    for _, row in df.iterrows():
+        ligand = row['ligand']
+        receptor = row['receptor']
+        if ligand in G and receptor in G:
+            try:
+                for path in nx.all_simple_paths(G, source=ligand, target=receptor, cutoff=max_len):
+                    paths.append({'ligand': ligand, 'receptor': receptor, 'path': path})
+            except nx.NetworkXNoPath:
+                continue
+    return paths
+
+indirect_paths_up = find_paths(highly_upregulated_df, G)
+indirect_paths_down = find_paths(highly_downregulated_df, G)
+
+# %%
+""" bioservices """
+#does not run
+from bioservices import KEGG
+k = KEGG()
+
+# Get pathways for a gene
+def get_kegg_pathways(gene_symbol):
+    try:
+        res = k.find("genes", gene_symbol)
+        if res:
+            return res.split("\n")[0]
+    except Exception as e:
+        return None
+
+# %%
+import pandas as pd
+import requests
+
+# Loaded data
+
+# Collect unique ligands and receptors
+def extract_unique_genes(df):
+    return set(df['ligand']).union(set(df['receptor']))
+
+genes_up = extract_unique_genes(highly_upregulated_df)
+genes_down = extract_unique_genes(highly_downregulated_df)
+
+# Define enrichment function
+def enrichr_query(genes, library='KEGG_2021_Mouse'):
+    print(f"Submitting {len(genes)} genes to Enrichr for: {library}")
+    ENRICHR_ADD_URL = 'https://maayanlab.cloud/Enrichr/addList'
+    ENRICHR_ENRICH_URL = 'https://maayanlab.cloud/Enrichr/enrich'
+    
+    # Prepare submission
+    payload = {
+        'list': '\n'.join(genes),
+        'description': 'LR pair enrichment'
+    }
+    response = requests.post(ENRICHR_ADD_URL, files=payload)
+    if not response.ok:
+        raise Exception('Error submitting gene list to Enrichr')
+
+    user_list_id = response.json()['userListId']
+
+    # Query enrichment results
+    params = {'userListId': user_list_id, 'backgroundType': library}
+    enrich_response = requests.get(ENRICHR_ENRICH_URL, params=params)
+    if not enrich_response.ok:
+        raise Exception('Error fetching enrichment results')
+
+    return enrich_response.json()
+
+# Run enrichment for KEGG and Reactome
+up_kegg = enrichr_query(genes_up, library='KEGG_2021_Mouse')
+up_reactome = enrichr_query(genes_up, library='Reactome_2016')
+
+down_kegg = enrichr_query(genes_down, library='KEGG_2021_Mouse')
+down_reactome = enrichr_query(genes_down, library='Reactome_2016')
+
+# Helper to parse results
+def display_top_terms(results, top_n=10):
+    df = pd.DataFrame(results['KEGG_2021_Mouse'] if 'KEGG_2021_Mouse' in results else list(results.values())[0],
+                      columns=['Rank', 'Term', 'P-value', 'Z-score', 'Combined score', 'Genes', 'Adjusted P-value', 'Old P-value', 'Old Adjusted P-value'])
+    return df.head(top_n)
+
+# View results
+# View results
+print("\n🔺 Top KEGG Pathways (UP):")
+print(display_top_terms(up_kegg))
+
+print("\n🔻 Top KEGG Pathways (DOWN):")
+print(display_top_terms(down_kegg))
+
+print("\n🔺 Top Reactome Pathways (UP):")
+print(display_top_terms(up_reactome))
+
+print("\n🔻 Top Reactome Pathways (DOWN):")
+print(display_top_terms(down_reactome))
+
+# %%
+
+#🔺 Top KEGG Pathways (Upregulated LR Pairs):
+
+
+#🔻 Top KEGG Pathways (Downregulated LR Pairs):
+
+
+#%%
+
+#Collecting ligands and receptors
+
+#Querying Enrichr
+
+#Parsing results
+
+#Visualizing top pathways
+
+""" reminder: i now can use the highly up or down regulated "interesting"
+interaction to look relevant stuff up from the new mice kg"""
+
+
+# --- Highly up/down regulated interactions ---
+highly_upregulated_df
+
+
+highly_downregulated_df
+
+
+
+# %%
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Sample data from previous enrichment (mocked here for reproducibility)
+# You would replace this with the actual data from the enrichment results
+top_up_kegg_df = pd.DataFrame({
+    'Term': ['Antigen processing', 'Cell adhesion', 'Allograft rejection', 'Graft vs host', 'Type I diabetes',
+             'Autoimmune thyroid', 'Viral myocarditis', 'T-cell leukemia', 'Epstein-Barr', 'Phagosome'],
+    'Combined score': [6641.97, 2043.48, 4318.77, 4318.77, 2213.47, 1777.17, 1542.55, 1181.00, 965.46, 843.00]
+})
+
+top_down_kegg_df = pd.DataFrame({
+    'Term': ['ECM-receptor interaction', 'Viral interaction', 'Chemokine signaling', 'Cytokine-cytokine',
+             'Toxoplasmosis', 'Hematopoietic lineage', 'Focal adhesion', 'Rheumatoid arthritis',
+             'Antigen processing', 'Cell adhesion'],
+    'Combined score': [5346.10, 2849.52, 1046.25, 745.43, 888.33, 745.83, 373.18, 524.96, 508.33, 310.85]
+})
+
+# Determine the maximum combined score for consistent Y-axis
+max_score = max(top_up_kegg_df['Combined score'].max(), top_down_kegg_df['Combined score'].max())
+
+# Plot Upregulated Pathways
+plt.figure(figsize=(10, 6))
+df_sorted_up = top_up_kegg_df.sort_values('Combined score', ascending=True)
+plt.barh(df_sorted_up['Term'], df_sorted_up['Combined score'], edgecolor='black', color='red')
+plt.xlabel("Combined score")
+plt.title("🔺 Top KEGG Pathways (Upregulated LR Pairs)")
+plt.xlim([0, max_score])
+plt.tight_layout()
+plt.show()
+
+# Plot Downregulated Pathways
+plt.figure(figsize=(10, 6))
+df_sorted_down = top_down_kegg_df.sort_values('Combined score', ascending=True)
+plt.barh(df_sorted_down['Term'], df_sorted_down['Combined score'], edgecolor='black', color='skyblue')
+plt.xlabel("Combined score")
+plt.title("🔻 Top KEGG Pathways (Downregulated LR Pairs)")
+plt.xlim([0, max_score])
+plt.tight_layout()
+plt.show()
 
 # %%
